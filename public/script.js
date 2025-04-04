@@ -1,12 +1,14 @@
 const socket = io();
 
-// Elementos del DOM
+// Elementos del DOM - Existente
 const preInvitationModal = document.getElementById('preInvitationModal');
 const preInvitationText = document.getElementById('preInvitationText');
 const cancelPreInviteBtn = document.getElementById('cancelPreInviteBtn');
 const beingInvitedModal = document.getElementById('beingInvitedModal');
 const beingInvitedText = document.getElementById('beingInvitedText');
 const cancelBeingInvitedBtn = document.getElementById('cancelBeingInvitedBtn');
+const rankingSidebar = document.getElementById('rankingSidebar');
+const backToMainBtn = document.getElementById('backToMainBtn');
 const registerScreen = document.getElementById('registerScreen');
 const mainContainer = document.getElementById('mainContainer');
 const nameError = document.getElementById('nameError');
@@ -80,6 +82,23 @@ const globalChatSendBtn = document.getElementById('globalChatSendBtn');
 const globalChatNotification = document.getElementById('globalChatNotification');
 const userMentionList = document.getElementById('userMentionList');
 
+// Nuevos elementos para multijugador
+const multiplayerMenu = document.getElementById('multiplayerMenu');
+const createGameBtn = document.getElementById('createGameBtn');
+const joinGameBtn = document.getElementById('joinGameBtn');
+const gameSettingsModal = document.getElementById('gameSettingsModal');
+const playerCountInput = document.getElementById('playerCountInput');
+const gameModeSelect = document.getElementById('gameModeSelect');
+const timeLimitInput = document.getElementById('timeLimitInput');
+const confirmSettingsBtn = document.getElementById('confirmSettingsBtn');
+const gamesList = document.getElementById('gamesList');
+const gameWaitingScreen = document.getElementById('gameWaitingScreen');
+const currentPlayersSpan = document.getElementById('currentPlayersSpan');
+const maxPlayersSpan = document.getElementById('maxPlayersSpan');
+const startGameBtn = document.getElementById('startGameBtn');
+const cancelWaitingBtn = document.getElementById('cancelWaitingBtn');
+const gamePlayersList = document.getElementById('gamePlayersList');
+
 // Variables de estado
 let currentGameId = null;
 let myTurn = false;
@@ -98,6 +117,12 @@ let mentionedUsers = [];
 let notificationCount = 0;
 let players = {};
 let playerStats = null;
+let availableGames = [];
+let currentGameSettings = {
+    gameMode: 'race',
+    playerCount: 4,
+    timeLimit: 45000
+};
 
 // Límites de tiempo por modo de juego
 const gameTimeLimits = {
@@ -258,17 +283,20 @@ function showWelcomeMessage(username, isReturning = false) {
     welcomeDiv.className = 'welcome-message';
     welcomeDiv.innerHTML = `
         <h3 style="color: var(--primary-color); margin-bottom: 15px;">
-            ${isReturning ? '&#128075;' : ' 127881;'} ${isReturning ? '¡Bienvenido/a de vuelta' : '¡Hola'} <span style="font-size: 1.8rem;">${username}</span>!
+            ${isReturning ? '&#128075;' : '&#127881;'} ${isReturning ? '¡Bienvenido/a de vuelta' : '¡Hola'} <span style="font-size: 1.8rem;">${username}</span>!
         </h3>
         <p style="font-size: 1.1rem;">
             Estás listo/a para jugar Vacas y Toros Online.
         </p>
-        <p style="margin-top: 15px; font-size: 0.95rem; color: #666;">
-            Elige un oponente de la lista para comenzar.
-        </p>
+        <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center;">
+            <button class="btn btn-primary" id="playMultiplayerBtn">Multijugador</button>
+        </div>
     `;
     
     welcomeCard.insertBefore(welcomeDiv, welcomeCard.firstChild);
+    
+    // Event listener solo para el botón de multijugador
+    document.getElementById('playMultiplayerBtn').addEventListener('click', showMultiplayerMenu);
 }
 
 function requestNotificationPermission() {
@@ -516,6 +544,8 @@ function resetGame() {
     if (gameChat) gameChat.style.display = 'none';
     if (secretNumberScreen) secretNumberScreen.style.display = 'none';
     if (welcomeCard) welcomeCard.style.display = 'block';
+    if (multiplayerMenu) multiplayerMenu.style.display = 'none';
+    if (gameWaitingScreen) gameWaitingScreen.style.display = 'none';
     if (yourGuesses) yourGuesses.innerHTML = '';
     if (opponentGuesses) opponentGuesses.innerHTML = '';
     if (chatMessages) chatMessages.innerHTML = '';
@@ -536,49 +566,7 @@ function resetGame() {
     }
 }
 
-function addRankingButtons() {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    
-    const rankingSection = document.createElement('div');
-    rankingSection.className = 'ranking-section';
-    rankingSection.innerHTML = `
-        <h2>&#x1f3c6; Rankings</h2>
-        <button class="ranking-btn" id="globalRankingBtn">Ranking Global</button>
-        <button class="ranking-btn" id="classicRankingBtn">Modo Clásico</button>
-        <button class="ranking-btn" id="fiveDigitsRankingBtn">5 Dígitos</button>
-        <button class="ranking-btn" id="sixDigitsRankingBtn">6 Dígitos</button>
-        <button class="ranking-btn" id="raceRankingBtn">Modo Carrera</button>
-        <button class="ranking-btn" id="myStatsBtn">Mis Estadísticas</button>
-    `;
-    
-    sidebar.appendChild(rankingSection);
-    
-    // Event listeners para los botones
-    document.getElementById('globalRankingBtn').addEventListener('click', () => {
-        socket.emit('requestRankings', { rankingType: 'global' });
-    });
-    
-    document.getElementById('classicRankingBtn').addEventListener('click', () => {
-        socket.emit('requestRankings', { rankingType: 'classic' });
-    });
-    
-    document.getElementById('fiveDigitsRankingBtn').addEventListener('click', () => {
-        socket.emit('requestRankings', { rankingType: '5digits' });
-    });
-    
-    document.getElementById('sixDigitsRankingBtn').addEventListener('click', () => {
-        socket.emit('requestRankings', { rankingType: '6digits' });
-    });
-    
-    document.getElementById('raceRankingBtn').addEventListener('click', () => {
-        socket.emit('requestRankings', { rankingType: 'race' });
-    });
-    
-    document.getElementById('myStatsBtn').addEventListener('click', () => {
-        socket.emit('requestPlayerStats', { username: playerName });
-    });
-}
+
 
 function showRankingsModal(rankingType, rankings) {
     const modal = document.createElement('div');
@@ -704,6 +692,8 @@ function showPlayerStatsModal(username, stats) {
     modal.innerHTML = `<div class="modal-content">${content}</div>`;
     document.body.appendChild(modal);
     
+	
+	
     // Manejar cierre del modal
     modal.addEventListener('click', (e) => {
         if (e.target.id === 'statsModal' || e.target.id === 'closeStatsBtn') {
@@ -857,6 +847,94 @@ function showRegisterError(message) {
     });
 }
 
+// Nuevas funciones para multijugador
+function showMultiplayerMenu() {
+    if (welcomeCard) welcomeCard.style.display = 'none';
+    if (sidebar) sidebar.style.display = 'none';
+	if (rankingSidebar) rankingSidebar.style.display = 'none'; // Ocultar panel de ranking
+    if (gameContainer) gameContainer.style.display = 'none';
+    
+    // Centrar el menú de multijugador
+	multiplayerMenu.style.display = 'block';
+    multiplayerMenu.style.margin = '50px auto'; // Centrado vertical y horizontal
+    multiplayerMenu.style.position = 'relative';
+    multiplayerMenu.style.top = '0';
+    multiplayerMenu.style.left = '0';
+    multiplayerMenu.style.transform = 'none';
+    
+    // Solicitar lista de partidas disponibles
+    socket.emit('requestAvailableGames');
+}
+
+function showMainMenu() {
+    if (welcomeCard) welcomeCard.style.display = 'block';
+    if (sidebar) sidebar.style.display = 'block';
+    if (multiplayerMenu) multiplayerMenu.style.display = 'none';
+    if (gameContainer) gameContainer.style.display = 'none';
+	if (rankingSidebar) rankingSidebar.style.display = 'block'; // Mostrar panel de ranking
+    if (gameWaitingScreen) gameWaitingScreen.style.display = 'none';
+}
+
+function updateGamesList(games) {
+    if (!gamesList) return;
+    
+    gamesList.innerHTML = '';
+    
+    games.forEach(game => {
+        const gameItem = document.createElement('div');
+        gameItem.className = 'game-item';
+        gameItem.innerHTML = `
+            <div class="game-info">
+                <h3>${game.creator} - ${getGameModeName(game.gameMode)}</h3>
+                <p>Jugadores: ${game.currentPlayers}/${game.maxPlayers}</p>
+                <p>Tiempo: ${game.timeLimit / 1000}s por turno</p>
+            </div>
+            <button class="btn btn-primary join-game-btn" data-game-id="${game.id}">
+                Unirse
+            </button>
+        `;
+        
+        gamesList.appendChild(gameItem);
+    });
+    
+    // Añadir event listeners a los botones de unirse
+    document.querySelectorAll('.join-game-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const gameId = e.target.dataset.gameId;
+            socket.emit('joinMultiplayerGame', { gameId });
+        });
+    });
+}
+
+function getGameModeName(mode) {
+    switch(mode) {
+        case 'classic': return 'Clásico (4 dígitos)';
+        case '5digits': return 'Avanzado (5 dígitos)';
+        case '6digits': return 'Experto (6 dígitos)';
+        case 'race': return 'Carrera';
+        default: return mode;
+    }
+}
+
+function updateWaitingPlayersList(playerIds) {
+    if (!gamePlayersList) return;
+    
+    gamePlayersList.innerHTML = '';
+    
+    playerIds.forEach(playerId => {
+        const player = players[playerId];
+        if (player) {
+            const playerElement = document.createElement('div');
+            playerElement.className = 'player-waiting';
+            playerElement.innerHTML = `
+                <span class="player-status online"></span>
+                ${player.name}
+            `;
+            gamePlayersList.appendChild(playerElement);
+        }
+    });
+}
+
 // Eventos de Socket.io
 socket.on('connect', () => {
     console.log('Conectado al servidor');
@@ -904,7 +982,30 @@ socket.on('registrationSuccess', ({ username }) => {
     loadEmojis();
     setupGlobalChat();
     setupGlobalChatSend();
-    addRankingButtons();
+    // Configurar listeners para los botones de ranking del panel derecho
+    document.getElementById('globalRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'global' });
+    });
+
+    document.getElementById('classicRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'classic' });
+    });
+
+    document.getElementById('fiveDigitsRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: '5digits' });
+    });
+
+    document.getElementById('sixDigitsRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: '6digits' });
+    });
+
+    document.getElementById('raceRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'race' });
+    });
+
+    document.getElementById('myStatsBtn').addEventListener('click', () => {
+        socket.emit('requestPlayerStats', { username: playerName });
+    });
 });
 
 socket.on('loginSuccess', ({ username }) => {
@@ -916,7 +1017,30 @@ socket.on('loginSuccess', ({ username }) => {
     loadEmojis();
     setupGlobalChat();
     setupGlobalChatSend();
-    addRankingButtons();
+    // Configurar listeners para los botones de ranking del panel derecho
+    document.getElementById('globalRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'global' });
+    });
+
+    document.getElementById('classicRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'classic' });
+    });
+
+    document.getElementById('fiveDigitsRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: '5digits' });
+    });
+
+    document.getElementById('sixDigitsRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: '6digits' });
+    });
+
+    document.getElementById('raceRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'race' });
+    });
+
+    document.getElementById('myStatsBtn').addEventListener('click', () => {
+        socket.emit('requestPlayerStats', { username: playerName });
+    });
 });
 
 socket.on('playerUpdate', (updatedPlayers) => {
@@ -930,23 +1054,15 @@ socket.on('playerUpdate', (updatedPlayers) => {
             const playerItem = document.createElement('li');
             playerItem.className = 'player-item';
             
-            const playerInfo = document.createElement('div');
-            playerInfo.innerHTML = `
-                <span>
-                    <span class="player-status ${player.status}"></span>
-                    ${player.name}
-                </span>
+            playerItem.innerHTML = `
+                <span class="player-status ${player.status}"></span>
+                <span class="player-name">${player.name}</span>
+                ${player.currentGame ? 
+                    '<span class="player-game-status">EN JUEGO</span>' : 
+                    '<span class="player-game-status">DISPONIBLE</span>'}
             `;
             
-            if (player.currentGame) {
-                const gameStatus = document.createElement('span');
-                gameStatus.className = 'player-game-status';
-                gameStatus.textContent = '(en partida)';
-                playerInfo.appendChild(gameStatus);
-                
-                playerItem.style.opacity = '0.7';
-                playerItem.style.cursor = 'not-allowed';
-            } else {
+            if (!player.currentGame) {
                 playerItem.addEventListener('click', () => {
                     currentInviteeId = player.socketId;
                     
@@ -967,9 +1083,11 @@ socket.on('playerUpdate', (updatedPlayers) => {
                         inviteeId: currentInviteeId
                     });
                 });
+            } else {
+                playerItem.style.opacity = '0.7';
+                playerItem.style.cursor = 'not-allowed';
             }
             
-            playerItem.appendChild(playerInfo);
             playerList.appendChild(playerItem);
         }
     });
@@ -988,7 +1106,7 @@ socket.on('receiveGlobalChatMessage', (message) => {
         if (Notification.permission === 'granted') {
             new Notification(`Te mencionaron en el chat global`, {
                 body: `${message.sender}: ${message.message}`,
-                icon: 'https://cdn-icons-png.flaticon.com/512  /2936/2936886.png'
+                icon: 'https://cdn-icons-png.flaticon.com/512/2936/2936886.png'
             });
         }
     }
@@ -1079,7 +1197,7 @@ socket.on('gameStarted', ({ gameId, opponent, yourTurn, chatMessages, gameMode }
     myTurn = yourTurn;
     if (opponentName) opponentName.textContent = opponent;
     if (chatOpponentName) chatOpponentName.textContent = opponent;
-    
+    if (rankingSidebar) rankingSidebar.style.display = 'none';
     if (guessInput) guessInput.value = '';
     if (chatInput) chatInput.value = '';
     
@@ -1133,6 +1251,99 @@ socket.on('gameStarted', ({ gameId, opponent, yourTurn, chatMessages, gameMode }
     if (yourGuesses) yourGuesses.innerHTML = '';
     if (opponentGuesses) opponentGuesses.innerHTML = '';
     if (gameStatus) gameStatus.innerHTML = '';
+});
+
+socket.on('multiplayerGameCreated', ({ gameId }) => {
+    currentGameId = gameId;
+    welcomeCard.style.display = 'none';
+    multiplayerMenu.style.display = 'none';
+    gameWaitingScreen.style.display = 'block';
+    
+    currentPlayersSpan.textContent = '1';
+    maxPlayersSpan.textContent = currentGameSettings.playerCount;
+    
+    // Mostrar jugadores en espera
+    if (availableGames.find(game => game.id === gameId)) {
+        updateWaitingPlayersList(availableGames.find(game => game.id === gameId).players);
+    }
+});
+
+socket.on('availableGamesUpdate', (games) => {
+    availableGames = games;
+    updateGamesList(games);
+});
+
+socket.on('playerJoinedGame', ({ gameId, playerName, currentPlayers, maxPlayers }) => {
+    if (currentGameId === gameId) {
+        currentPlayersSpan.textContent = currentPlayers;
+        
+        // Actualizar lista de jugadores
+        if (availableGames.find(game => game.id === gameId)) {
+            updateWaitingPlayersList(availableGames.find(game => game.id === gameId).players);
+        }
+        
+        // Notificar en el chat
+        const systemMessage = {
+            sender: "[Sistema]",
+            message: `${playerName} se ha unido a la partida (${currentPlayers}/${maxPlayers})`,
+            timestamp: new Date().toLocaleTimeString(),
+            isSystem: true
+        };
+        addChatMessage(systemMessage);
+        
+        // Si soy el creador y la partida está llena, mostrar botón de inicio
+        if (currentPlayers === maxPlayers && players[socket.id].currentGame === gameId) {
+            startGameBtn.style.display = 'block';
+        }
+    }
+});
+
+socket.on('playerLeftGame', ({ playerName, currentPlayers }) => {
+    const systemMessage = {
+        sender: "[Sistema]",
+        message: `${playerName} ha abandonado la partida (${currentPlayers} jugadores restantes)`,
+        timestamp: new Date().toLocaleTimeString(),
+        isSystem: true
+    };
+    addChatMessage(systemMessage);
+    
+    if (currentPlayersSpan) {
+        currentPlayersSpan.textContent = currentPlayers;
+    }
+});
+
+socket.on('gameFinished', ({ position, totalPlayers, score, isWinner, secretNumber, gameMode }) => {
+    let title, message;
+    
+    if (gameMode === 'race') {
+        title = isWinner ? '&#x1f3c6; ¡GANASTE LA CARRERA!' : `&#x1f4aa; Posición ${position} de ${totalPlayers}`;
+        message = isWinner ? 
+            '¡Fuiste el primero en adivinar el número!' : 
+            `El ganador adivinó antes que tú. Tu posición: ${position} de ${totalPlayers}`;
+    } else {
+        title = isWinner ? '&#x1f389; ¡GANASTE!' : '&#x1f622; ¡PERDISTE!';
+        message = isWinner ? 
+            'Adivinaste el número secreto antes que los demás' : 
+            'Otro jugador adivinó tu número secreto primero';
+    }
+    
+    if (resultTitle) resultTitle.innerHTML = title;
+    if (resultMessage) {
+        resultMessage.innerHTML = `
+            <p>${message}</p>
+            <p>Puntos obtenidos: <strong>${score}</strong></p>
+            ${gameMode !== 'race' ? 
+                `<p>Tu número secreto: <strong>${mySecretNumber}</strong></p>` :
+                `<p>Número a adivinar: <strong>${secretNumber}</strong></p>`}
+        `;
+    }
+    if (resultModal) resultModal.style.display = 'flex';
+    
+    if (gameStatus) {
+        gameStatus.innerHTML = isWinner ? 
+            '<span style="color: var(--success-color); font-weight: bold;">&#x1f3c6; ¡Ganaste!</span>' :
+            `<span style="color: var(--danger-color); font-weight: bold;">Posición ${position} de ${totalPlayers}</span>`;
+    }
 });
 
 socket.on('turnChanged', ({ currentTurn, timeLeft }) => {
@@ -1223,7 +1434,7 @@ socket.on('gameWon', ({ secretNumber, opponentSecret, gameMode }) => {
         `;
     }
     if (resultModal) resultModal.style.display = 'flex';
-    
+    if (rankingSidebar) rankingSidebar.style.display = 'block';
     if (gameStatus) {
         gameStatus.innerHTML = '<span style="color: var(--success-color); font-weight: bold;">&#x1f3c6; ¡Ganaste!</span>';
     }
@@ -1251,7 +1462,7 @@ socket.on('gameLost', ({ secretNumber, opponentSecret, gameMode }) => {
         `;
     }
     if (resultModal) resultModal.style.display = 'flex';
-    
+    if (rankingSidebar) rankingSidebar.style.display = 'block';
     if (gameStatus) {
         gameStatus.innerHTML = '<span style="color: var(--danger-color); font-weight: bold;">&#x1f494; ¡Perdiste!</span>';
     }
@@ -1281,16 +1492,19 @@ socket.on('receivePlayerStats',  ({ username, stats }) => {
 
 socket.on('opponentDisconnected',  ({ opponentName }) => {
     alert(`${opponentName} se ha desconectado. La partida ha terminado.`);
+	if (rankingSidebar) rankingSidebar.style.display = 'block';
     resetGame();
 });
 
 socket.on('opponentQuit',  ({ opponentName }) => {
     alert(`${opponentName} ha abandonado la partida.`);
+	if (rankingSidebar) rankingSidebar.style.display = 'block';
     resetGame();
 });
 
 socket.on('gameCancelled',  () => {
     alert('El otro jugador ha cancelado la partida antes de que comenzara.');
+	if (rankingSidebar) rankingSidebar.style.display = 'block';
     resetGame();
 });
 
@@ -1321,12 +1535,57 @@ socket.on('notYourTurn',  ({ message }) => {
 });
 
 // Eventos del DOM
+
+if (createGameBtn) {
+    createGameBtn.addEventListener('click', () => {
+        gameSettingsModal.style.display = 'flex';
+    });
+}
+
+if (cancelSettingsBtn) {
+    cancelSettingsBtn.addEventListener('click', () => {
+        gameSettingsModal.style.display = 'none';
+    });
+}
+
+if (confirmSettingsBtn) {
+    confirmSettingsBtn.addEventListener('click', () => {
+        currentGameSettings = {
+            gameMode: gameModeSelect.value,
+            playerCount: parseInt(playerCountInput.value),
+            timeLimit: parseInt(timeLimitInput.value) * 1000
+        };
+        
+        socket.emit('createMultiplayerGame', currentGameSettings);
+        gameSettingsModal.style.display = 'none';
+    });
+}
+
+if (startGameBtn) {
+    startGameBtn.addEventListener('click', () => {
+        socket.emit('startMultiplayerGame', { gameId: currentGameId });
+    });
+}
+
+if (cancelWaitingBtn) {
+    cancelWaitingBtn.addEventListener('click', () => {
+        if (confirm('¿Estás seguro de que quieres cancelar la partida?')) {
+            socket.emit('cancelGame', { gameId: currentGameId });
+            resetGame();
+        }
+    });
+}
+
 if (cancelPreInviteBtn) {
     cancelPreInviteBtn.addEventListener('click', () => {
         if (preInvitationModal) preInvitationModal.style.display = 'none';
         currentInviteeId = null;
         socket.emit('cancelPendingInvitation');
     });
+}
+
+if (backToMainBtn) {
+    backToMainBtn.addEventListener('click', showMainMenu);
 }
 
 if (gameModeBtns) {
