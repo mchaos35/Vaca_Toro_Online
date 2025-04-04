@@ -97,6 +97,7 @@ let mentionStartPos = -1;
 let mentionedUsers = [];
 let notificationCount = 0;
 let players = {};
+let playerStats = null;
 
 // Límites de tiempo por modo de juego
 const gameTimeLimits = {
@@ -257,7 +258,7 @@ function showWelcomeMessage(username, isReturning = false) {
     welcomeDiv.className = 'welcome-message';
     welcomeDiv.innerHTML = `
         <h3 style="color: var(--primary-color); margin-bottom: 15px;">
-            ${isReturning ? '&#128075;' : '&#127881;'} ${isReturning ? '¡Bienvenido/a de vuelta' : '¡Hola'} <span style="font-size: 1.8rem;">${username}</span>!
+            ${isReturning ? '&#128075;' : ' 127881;'} ${isReturning ? '¡Bienvenido/a de vuelta' : '¡Hola'} <span style="font-size: 1.8rem;">${username}</span>!
         </h3>
         <p style="font-size: 1.1rem;">
             Estás listo/a para jugar Vacas y Toros Online.
@@ -519,6 +520,175 @@ function resetGame() {
     if (sidebar) sidebar.style.display = 'block';
 }
 
+function addRankingButtons() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    
+    const rankingSection = document.createElement('div');
+    rankingSection.className = 'ranking-section';
+    rankingSection.innerHTML = `
+        <h2>&#x1f3c6; Rankings</h2>
+        <button class="ranking-btn" id="globalRankingBtn">Ranking Global</button>
+        <button class="ranking-btn" id="classicRankingBtn">Modo Clásico</button>
+        <button class="ranking-btn" id="fiveDigitsRankingBtn">5 Dígitos</button>
+        <button class="ranking-btn" id="sixDigitsRankingBtn">6 Dígitos</button>
+        <button class="ranking-btn" id="raceRankingBtn">Modo Carrera</button>
+        <button class="ranking-btn" id="myStatsBtn">Mis Estadísticas</button>
+    `;
+    
+    sidebar.appendChild(rankingSection);
+    
+    // Event listeners para los botones
+    document.getElementById('globalRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'global' });
+    });
+    
+    document.getElementById('classicRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'classic' });
+    });
+    
+    document.getElementById('fiveDigitsRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: '5digits' });
+    });
+    
+    document.getElementById('sixDigitsRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: '6digits' });
+    });
+    
+    document.getElementById('raceRankingBtn').addEventListener('click', () => {
+        socket.emit('requestRankings', { rankingType: 'race' });
+    });
+    
+    document.getElementById('myStatsBtn').addEventListener('click', () => {
+        socket.emit('requestPlayerStats', { username: playerName });
+    });
+}
+
+function showRankingsModal(rankingType, rankings) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'rankingsModal';
+    modal.style.display = 'flex';
+    
+    let title = '';
+    switch(rankingType) {
+        case 'classic': title = 'Ranking Modo Clásico'; break;
+        case '5digits': title = 'Ranking 5 Dígitos'; break;
+        case '6digits': title = 'Ranking 6 Dígitos'; break;
+        case 'race': title = 'Ranking Modo Carrera'; break;
+        default: title = 'Ranking Global';
+    }
+    
+    let content = `<h2>${title}</h2><ol class="ranking-list">`;
+    
+    rankings.forEach((player, index) => {
+        content += `<li>
+            <span class="rank-position">${index + 1}</span>
+            <span class="rank-username">${player.username}</span>
+            <span class="rank-score">${player.score} pts</span>
+        </li>`;
+    });
+    
+    content += `</ol>
+        <div class="modal-actions">
+            <button class="btn btn-primary" id="closeRankingsBtn">Cerrar</button>
+        </div>`;
+    
+    modal.innerHTML = `<div class="modal-content">${content}</div>`;
+    document.body.appendChild(modal);
+    
+    // Manejar cierre del modal
+    modal.addEventListener('click', (e) => {
+        if (e.target.id === 'rankingsModal' || e.target.id === 'closeRankingsBtn') {
+            document.body.removeChild(modal);
+        }
+    });
+}
+
+function showPlayerStatsModal(username, stats) {
+    if (!stats) {
+        alert('No se encontraron estadísticas para este jugador');
+        return;
+    }
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'statsModal';
+    modal.style.display = 'flex';
+    
+    let content = `<h2>Estadísticas de ${username}</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Puntuación Total</h3>
+                <p class="stat-value">${stats.totalScore}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Partidas Jugadas</h3>
+                <p class="stat-value">${stats.gamesPlayed}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Partidas Ganadas</h3>
+                <p class="stat-value">${stats.gamesWon} (${Math.round((stats.gamesWon / stats.gamesPlayed) * 100)}%)</p>
+            </div>
+        </div>
+        
+        <h3 style="margin-top: 20px;">Por modo de juego:</h3>
+        <div class="mode-stats">
+            <div class="mode-stat">
+                <h4>Clásico</h4>
+                <p>Puntos: ${stats.classic.score}</p>
+                <p>Partidas: ${stats.classic.games}</p>
+                <p>Victorias: ${stats.classic.wins} (${stats.classic.games > 0 ? Math.round((stats.classic.wins / stats.classic.games) * 100) : 0}%)</p>
+            </div>
+            <div class="mode-stat">
+                <h4>5 Dígitos</h4>
+                <p>Puntos: ${stats['5digits'].score}</p>
+                <p>Partidas: ${stats['5digits'].games}</p>
+                <p>Victorias: ${stats['5digits'].wins} (${stats['5digits'].games > 0 ? Math.round((stats['5digits'].wins / stats['5digits'].games) * 100) : 0}%)</p>
+            </div>
+            <div class="mode-stat">
+                <h4>6 Dígitos</h4>
+                <p>Puntos: ${stats['6digits'].score}</p>
+                <p>Partidas: ${stats['6digits'].games}</p>
+                <p>Victorias: ${stats['6digits'].wins} (${stats['6digits'].games > 0 ? Math.round((stats['6digits'].wins / stats['6digits'].games) * 100) : 0}%)</p>
+            </div>
+            <div class="mode-stat">
+                <h4>Carrera</h4>
+                <p>Puntos: ${stats.race.score}</p>
+                <p>Partidas: ${stats.race.games}</p>
+                <p>Victorias: ${stats.race.wins} (${stats.race.games > 0 ? Math.round((stats.race.wins / stats.race.games) * 100) : 0}%)</p>
+            </div>
+        </div>
+        
+        <div class="modal-actions">
+            <button class="btn btn-primary" id="closeStatsBtn">Cerrar</button>
+        </div>`;
+    
+    modal.innerHTML = `<div class="modal-content">${content}</div>`;
+    document.body.appendChild(modal);
+    
+    // Manejar cierre del modal
+    modal.addEventListener('click', (e) => {
+        if (e.target.id === 'statsModal' || e.target.id === 'closeStatsBtn') {
+            document.body.removeChild(modal);
+        }
+    });
+}
+
+function showNotification(message) {
+    const notification = document.createElement('div');
+    notification.className = 'score-notification';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 500);
+    }, 3000);
+}
+
 // Funciones de autenticación
 function setupAuthForms() {
     // Limpiar errores al empezar a escribir
@@ -697,6 +867,7 @@ socket.on('registrationSuccess', ({ username }) => {
     loadEmojis();
     setupGlobalChat();
     setupGlobalChatSend();
+    addRankingButtons();
 });
 
 socket.on('loginSuccess', ({ username }) => {
@@ -708,6 +879,7 @@ socket.on('loginSuccess', ({ username }) => {
     loadEmojis();
     setupGlobalChat();
     setupGlobalChatSend();
+    addRankingButtons();
 });
 
 socket.on('playerUpdate', (updatedPlayers) => {
@@ -779,7 +951,7 @@ socket.on('receiveGlobalChatMessage', (message) => {
         if (Notification.permission === 'granted') {
             new Notification(`Te mencionaron en el chat global`, {
                 body: `${message.sender}: ${message.message}`,
-                icon: 'https://cdn-icons-png.flaticon.com/512/2936/2936886.png'
+                icon: 'https://cdn-icons-png.flaticon.com/512  /2936/2936886.png'
             });
         }
     }
@@ -999,7 +1171,7 @@ socket.on('gameWon', ({ secretNumber, opponentSecret, gameMode }) => {
         title = '&#x1f3c6; ¡GANASTE LA CARRERA!';
         message = 'Adivinaste el número antes que tu oponente';
     } else {
-        title = '&#x1f389; ¡GANASTE!';
+        title = '&#x1  f389; ¡GANASTE!';
         message = 'Adivinaste el número secreto de tu oponente';
     }
     
@@ -1027,7 +1199,7 @@ socket.on('gameLost', ({ secretNumber, opponentSecret, gameMode }) => {
         title = '&#x1f62d; ¡PERDISTE LA CARRERA!';
         message = 'Tu oponente adivinó el número primero';
     } else {
-        title = '&#x1f622; ¡PERDISTE!';
+        title = '&#x1  f622; ¡PERDISTE!';
         message = 'Tu oponente adivinó tu número secreto';
     }
     
@@ -1048,31 +1220,53 @@ socket.on('gameLost', ({ secretNumber, opponentSecret, gameMode }) => {
     }
 });
 
-socket.on('opponentDisconnected', ({ opponentName }) => {
+socket.on('scoreUpdate',  ({ score, isNewHighScore }) => {
+    if (isNewHighScore) {
+        showNotification(`¡Nuevo récord! Has ganado ${score} puntos`);
+    } else {
+        showNotification(`Has ganado ${score} puntos`);
+    }
+    
+    // Actualizar estadísticas locales
+    if (playerStats) {
+        playerStats.totalScore += score;
+    }
+});
+
+socket.on('receiveRankings',  ({ rankingType, rankings }) => {
+    showRankingsModal(rankingType, rankings);
+});
+
+socket.on('receivePlayerStats',  ({ username, stats }) => {
+    playerStats = stats;
+    showPlayerStatsModal(username, stats);
+});
+
+socket.on('opponentDisconnected',  ({ opponentName }) => {
     alert(`${opponentName} se ha desconectado. La partida ha terminado.`);
     resetGame();
 });
 
-socket.on('opponentQuit', ({ opponentName }) => {
+socket.on('opponentQuit',  ({ opponentName }) => {
     alert(`${opponentName} ha abandonado la partida.`);
     resetGame();
 });
 
-socket.on('gameCancelled', () => {
+socket.on('gameCancelled',  () => {
     alert('El otro jugador ha cancelado la partida antes de que comenzara.');
     resetGame();
 });
 
-socket.on('gameError', ({ message }) => {
+socket.on('gameError',  ({ message }) => {
     alert(`Error: ${message}`);
     resetGame();
 });
 
-socket.on('invalidGuess', ({ message }) => {
+socket.on('invalidGuess',  ({ message }) => {
     alert(message);
 });
 
-socket.on('invalidSecretNumber', ({ message }) => {
+socket.on('invalidSecretNumber',  ({ message }) => {
     if (secretNumberError) {
         secretNumberError.textContent = message;
         secretNumberError.style.display = 'block';
@@ -1085,7 +1279,7 @@ socket.on('invalidSecretNumber', ({ message }) => {
     }
 });
 
-socket.on('notYourTurn', ({ message }) => {
+socket.on('notYourTurn',  ({ message }) => {
     alert(message);
 });
 
@@ -1192,7 +1386,7 @@ if (submitSecretNumberBtn) {
         const secret = secretNumberInput.value.trim();
         const secretLength = parseInt(secretNumberLength.textContent);
         
-        if (secret.length !== secretLength || !/^\d+$/.test(secret) || new Set(secret.split('')).size !== secretLength) {
+        if (secret.length !== secretLength || !/  ^\d+$/.test(secret) || new Set(secret.split('')).size !== secretLength) {
             if (secretNumberError) {
                 secretNumberError.textContent = `El numero debe tener ${secretLength} digitos unicos`;
                 secretNumberError.style.display = 'block';
@@ -1277,7 +1471,7 @@ if (submitGuessBtn) {
         const guess = guessInput.value.trim();
         const requiredLength = parseInt(guessInput.maxLength);
         
-        if (guess.length !== requiredLength || !/^\d+$/.test(guess) || new Set(guess.split('')).size !== requiredLength) {
+        if (guess.length !== requiredLength || !/  ^\d+$/.test(guess) || new Set(guess.split('')).size !== requiredLength) {
             if (guessInput) {
                 guessInput.classList.add('shake');
                 setTimeout(() => {

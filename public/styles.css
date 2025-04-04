@@ -1058,4 +1058,147 @@
     border: 1px solid rgba(106, 90, 205, 0.2);
     order: -1; /* Mover al principio del contenedor */
 }
+/* Agregar al final del archivo */
 
+/* Estilos para el sistema de puntuación */
+.score-notification {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary-color);
+    color: white;
+    padding: 15px 25px;
+    border-radius: 50px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    animation: slideUp 0.3s;
+}
+
+@keyframes slideUp {
+    from { transform: translate(-50%, 100px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+.score-notification.fade-out {
+    animation: fadeOut 0.5s;
+}
+
+/* Estilos para los rankings */
+.ranking-section {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+}
+
+.ranking-section h2 {
+    margin-bottom: 15px;
+    color: var(--primary-color);
+    font-size: 1.2rem;
+}
+
+.ranking-btn {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: var(--light-color);
+    border: 1px solid var(--primary-color);
+    border-radius: 5px;
+    color: var(--primary-color);
+    cursor: pointer;
+    transition: all 0.3s;
+    text-align: center;
+}
+
+.ranking-btn:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.ranking-list {
+    list-style: none;
+    margin: 20px 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.ranking-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    margin-bottom: 5px;
+    background: rgba(106, 90, 205, 0.1);
+    border-radius: 5px;
+}
+
+.rank-position {
+    font-weight: bold;
+    color: var(--primary-color);
+    min-width: 30px;
+}
+
+.rank-username {
+    flex: 1;
+    text-align: left;
+    padding-left: 10px;
+}
+
+.rank-score {
+    font-weight: bold;
+}
+
+/* Estilos para estadísticas */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin: 15px 0;
+}
+
+.stat-card {
+    background: rgba(106, 90, 205, 0.1);
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.stat-card h3 {
+    font-size: 1rem;
+    margin-bottom: 5px;
+    color: var(--primary-color);
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.mode-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+
+.mode-stat {
+    background: rgba(106, 90, 205, 0.05);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(106, 90, 205, 0.1);
+}
+
+.mode-stat h4 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+}
+
+.mode-stat p {
+    margin: 5px 0;
+    font-size: 0.9rem;
+}
