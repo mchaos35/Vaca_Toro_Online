@@ -133,8 +133,7 @@ function calculateScore(gameMode, turnCount, timeUsed, timeLimit, isWinner) {
     return Math.round(finalScore);
 }
 
-function updateRankings(username, gameMode, score) {
-    // Inicializar jugador si no existe
+function updateRankings(username, gameMode, score, isWinner) {
     if (!scores[username]) {
         scores[username] = {
             totalScore: 0,
@@ -146,23 +145,23 @@ function updateRankings(username, gameMode, score) {
             race: { score: 0, games: 0, wins: 0 }
         };
     }
-    
-    // Actualizar estadísticas
+
+    // Actualizar puntuación total
     scores[username].totalScore += score;
     scores[username].gamesPlayed += 1;
     scores[username][gameMode].score += score;
     scores[username][gameMode].games += 1;
-    
-    if (score > 0) {
+
+    // Solo aumentar victorias si es el ganador
+    if (isWinner) {
         scores[username].gamesWon += 1;
         scores[username][gameMode].wins += 1;
     }
-    
+
     // Actualizar rankings
     updateSingleRanking('global', username, scores[username].totalScore);
     updateSingleRanking(gameMode, username, scores[username][gameMode].score);
-    
-    // Guardar datos
+
     saveScores();
     saveRankings();
 }
@@ -458,26 +457,27 @@ io.on('connection', (socket) => {
                     secretLength: secretLength
                 });
             } else {
-                games[gameId].currentTurn = games[gameId].players[Math.floor(Math.  random() * 2)];
-                
-                io.to(inviterId).emit('gameStarted', { 
-                    gameId, 
-                    opponent: players[socket.id].name,
-                    yourTurn: games[gameId].currentTurn === inviterId,
-                    chatMessages: games[gameId].chatMessages,
-                    gameMode: gameMode
-                });
-                
-                io.to(socket.id).emit('gameStarted', { 
-                    gameId, 
-                    opponent: players[inviterId].name,
-                    yourTurn: games[gameId].currentTurn === socket.id,
-                    chatMessages: games[gameId].chatMessages,
-                    gameMode: gameMode
-                });
-                
-                changeTurn(games[gameId]);
-            }
+				games[gameId].raceNumber = generateRandomNumber(secretLength);
+    games[gameId].currentTurn = games[gameId].players[Math.floor(Math.random() * 2)];
+    
+    io.to(inviterId).emit('gameStarted', { 
+        gameId, 
+        opponent: players[socket.id].name,
+        yourTurn: games[gameId].currentTurn === inviterId,
+        chatMessages: games[gameId].chatMessages,
+        gameMode: gameMode
+    });
+    
+    io.to(socket.id).emit('gameStarted', { 
+        gameId, 
+        opponent: players[inviterId].name,
+        yourTurn: games[gameId].currentTurn === socket.id,
+        chatMessages: games[gameId].chatMessages,
+        gameMode: gameMode
+    });
+    
+    changeTurn(games[gameId]);
+}
             
             io.emit('playerUpdate', players);
             delete pendingInvitations[socket.id];
@@ -573,105 +573,140 @@ io.on('connection', (socket) => {
     });
     
     // Adivinanzas
-    socket.on('submitGuess',  ({ gameId, guess }) => {
-        const game = games[gameId];
-        if (!game || game.winner) return;
+    socket.on('submitGuess', ({ gameId, guess }) => {
+    const game = games[gameId];
+    if (!game || game.winner) return;
+
+    if (game.currentTurn !== socket.id) {
+        socket.emit('notYourTurn', { message: 'No es tu turno' });
+        return;
+    }
+
+    if (game.timer) {
+        clearTimeout(game.timer);
+        game.timer = null;
+    }
+
+    const playerId = socket.id;
+    const opponentId = game.players.find(id => id !== playerId);
+    const secret = game.gameMode === 'race' ? game.raceNumber : game.secrets[opponentId];
+    
+    // Validar que el intento cumple con las reglas
+    if (!isValidNumber(guess, game.secretLength)) {
+        socket.emit('invalidGuess', { 
+            message: `El número debe tener ${game.secretLength} dígitos únicos sin repetir` 
+        });
+        return;
+    }
+
+    const { bulls, cows } = calculateBullsAndCows(secret, guess);
+    game.guesses[playerId].push({ guess, bulls, cows });
+
+    // Si adivinó el número (victoria)
+    if (bulls === game.secretLength) {
+        game.winner = playerId;
+        clearTimeout(game.timer);
+
+        // Calcular puntuaciones
+        const turnCount = game.guesses[playerId].length;
+        const timeUsed = game.timeLimit - game.timeLeft;
         
-        if (game.currentTurn !== socket.id) {
-            socket.emit('notYourTurn', { message: 'No es tu turno' });
-            return;
-        }
+        // Puntuación del ganador (completa)
+        const winnerScore = calculateScore(
+            game.gameMode, 
+            turnCount, 
+            timeUsed, 
+            game.timeLimit, 
+            true
+        );
+
+        // Puntuación del perdedor (10% del ganador o 0)
+        const loserScore = game.gameMode === 'race' ? 0 : Math.round(winnerScore * 0.1);
+
+        // Actualizar estadísticas del GANADOR
+        if (players[playerId]) {
+            updateRankings(
+                players[playerId].name, 
+                game.gameMode, 
+                winnerScore,
+                true  // isWinner = true
+            );
             
-        if (game.timer) {
-            clearTimeout(game.timer);
-            game.timer = null;
+            io.to(playerId).emit('scoreUpdate', {
+                score: winnerScore,
+                isNewHighScore: scores[players[playerId].name]?.[game.gameMode]?.score <= winnerScore
+            });
         }
 
-        const playerId = socket.id;
-        const opponentId = game.players.find(id => id !== playerId);
-        const secret = game.gameMode === 'race' ? game.raceNumber : game.secrets[opponentId];
-        const { bulls, cows } = calculateBullsAndCows(secret, guess);
-        
-        game.guesses[playerId].push({ guess, bulls, cows });
-        
-        if (bulls === game.secretLength) {
-            game.winner = playerId;
+        // Actualizar estadísticas del PERDEDOR
+        if (players[opponentId]) {
+            updateRankings(
+                players[opponentId].name, 
+                game.gameMode, 
+                loserScore,
+                false  // isWinner = false
+            );
             
-            if (game.timer) {
-                clearTimeout(game.timer);
-            }
-            
-            // Calcular puntuaciones
-            const playerName = players[playerId]?.name;
-            const turnCount = game.guesses[playerId]?.length || 1;
-            const timeUsed = game.timeLimit - game.timeLeft;
-            const winnerScore = calculateScore(game.gameMode, turnCount, timeUsed, game.timeLimit, true);
-            
-            const opponentName = players[opponentId]?.name;
-            const opponentTurnCount = game.guesses[opponentId]?.length || 1;
-            const opponentTimeUsed = game.timeLimit - game.timeLeft;
-            const loserScore = calculateScore(game.gameMode, opponentTurnCount, opponentTimeUsed, game.timeLimit, false) * 0.3;
-            
-            if (playerName) {
-                updateRankings(playerName, game.gameMode, winnerScore);
-                io.to(playerId).emit('scoreUpdate', {
-                    score: winnerScore,
-                    isNewHighScore: winnerScore >= scores[playerName][game.gameMode].score
-                });
-            }
-            
-            if (opponentName) {
-                updateRankings(opponentName, game.gameMode, Math.round(loserScore));
-                io.to(opponentId).emit('scoreUpdate', {
-                    score: Math.round(loserScore),
-                    isNewHighScore: false
-                });
-            }
-            
-            if (game.gameMode === 'race') {
-                io.to(playerId).emit('gameWon', { 
-                    secretNumber: game.raceNumber,
-                    opponentSecret: null,
-                    gameMode: game.gameMode
-                });
-                io.to(opponentId).emit('game  Lost', { 
-                    secretNumber: game.raceNumber,
-                    opponentSecret: null,
-                    gameMode: game.gameMode
-                });
-            } else {
-                io.to(playerId).emit('gameWon', { 
-                    secretNumber: game.secrets[playerId],
-                    opponentSecret: game.secrets[opponentId],
-                    gameMode: game.gameMode
-                });
-                io.to(opponentId).emit('gameLost', { 
-                    secretNumber: game.secrets[opponentId],
-                    opponentSecret: game.secrets[playerId],
-                    gameMode: game.gameMode
-                });
-            }
-            
-            if (players[playerId]) players[playerId].currentGame = null;
-            if (players[opponentId]) players[opponentId].currentGame = null;
-            io.emit('playerUpdate', players);
-        } else {
-            changeTurn(game);
-            
-            io.to(playerId).emit('guessResult', { 
-                guess, bulls, cows, 
-                yourTurn: false,
-                opponentGuess: null,
+            io.to(opponentId).emit('scoreUpdate', {
+                score: loserScore,
+                isNewHighScore: false
+            });
+        }
+
+        // Notificar resultados
+        if (game.gameMode === 'race') {
+            io.to(playerId).emit('gameWon', { 
+                secretNumber: game.raceNumber,
+                opponentSecret: null,
                 gameMode: game.gameMode
             });
-            
-            io.to(opponentId).emit('opponentGuess', { 
-                guess, bulls, cows, 
-                yourTurn: true,
+            io.to(opponentId).emit('gameLost', { 
+                secretNumber: game.raceNumber,
+                opponentSecret: null,
+                gameMode: game.gameMode
+            });
+        } else {
+            io.to(playerId).emit('gameWon', { 
+                secretNumber: game.secrets[playerId],
+                opponentSecret: game.secrets[opponentId],
+                gameMode: game.gameMode
+            });
+            io.to(opponentId).emit('gameLost', { 
+                secretNumber: game.secrets[opponentId],
+                opponentSecret: game.secrets[playerId],
                 gameMode: game.gameMode
             });
         }
-    });
+
+        // Limpiar estado del juego
+        [playerId, opponentId].forEach(id => {
+            if (players[id]) players[id].currentGame = null;
+        });
+        
+        delete games[gameId];
+        io.emit('playerUpdate', players);
+
+    } else {
+        // Cambiar turno si no hubo acierto
+        changeTurn(game);
+        
+        io.to(playerId).emit('guessResult', { 
+            guess, 
+            bulls, 
+            cows, 
+            yourTurn: false,
+            gameMode: game.gameMode
+        });
+        
+        io.to(opponentId).emit('opponentGuess', { 
+            guess, 
+            bulls, 
+            cows, 
+            yourTurn: true,
+            gameMode: game.gameMode
+        });
+    }
+});
     
     // Abandonar partida
     socket.on('quitGame',  ({ gameId }) => {
