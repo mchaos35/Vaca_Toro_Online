@@ -2,22 +2,46 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
 // Configuración del servidor
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     next();
 });
 
+// Archivo para almacenar usuarios
+const USERS_FILE = path.join(__dirname, 'users.json');
+
+// Cargar usuarios existentes o crear archivo si no existe
+let users = {};
+if (fs.existsSync(USERS_FILE)) {
+    users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+}
+
+// Función para guardar usuarios
+function saveUsers() {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+// Límites de tiempo por modo de juego
+const gameTimeLimits = {
+    'classic': 45000, // 45 segundos para 4 dígitos
+    '5digits': 60000, // 1 minuto para 5 dígitos
+    '6digits': 60000, // 1 minuto para 6 dígitos
+    'race': 45000     // 45 segundos para modo carrera
+};
+
 // Estado del juego
 const players = {};
 const games = {};
+const pendingInvitations = {};
 
 // Eliminar acentos y caracteres especiales
 function normalizeText(text) {
@@ -67,73 +91,259 @@ function isValidNumber(number, length) {
            new Set(number.split('')).size === length;
 }
 
+// Cambiar turno y manejar temporizador
+function changeTurn(game) {
+    // Limpiar temporizador existente
+    if (game.timer) {
+        clearTimeout(game.timer);
+        game.timer = null;
+    }
+    
+    // Solo cambiar turno si el juego no ha terminado
+    if (!game.winner) {
+        // Cambiar al siguiente jugador
+        game.currentTurn = game.players.find(id => id !== game.currentTurn);
+        game.timeLeft = game.timeLimit;
+        
+        // Configurar nuevo temporizador
+        game.timer = setTimeout(() => {
+            const playerTimedOut = game.currentTurn;
+            const nextPlayer = game.players.find(id => id !== playerTimedOut);
+            const playerName = players[playerTimedOut]?.name || "Un jugador";
+            
+            // Solo procesar si el juego no ha terminado
+            if (!game.winner) {
+                const timeoutMessage = {
+                    sender: "[Sistema]",
+                    message: `¡A ${playerName} se le acabó el tiempo!`,
+                    timestamp: new Date().toLocaleTimeString(),
+                    isSystem: true
+                };
+                
+                game.chatMessages.push(timeoutMessage);
+                
+                // Cambiar al siguiente jugador
+                game.currentTurn = nextPlayer;
+                
+                // Notificar a ambos jugadores
+                game.players.forEach(playerId => {
+                    if (players[playerId]) {
+                        io.to(playerId).emit('receiveChatMessage', timeoutMessage);
+                        io.to(playerId).emit('timeOut', {
+                            playerTimedOut: playerTimedOut,
+                            nextTurn: nextPlayer
+                        });
+                    }
+                });
+                
+                // Iniciar nuevo turno sin recursión
+                if (game.timer) {
+                    clearTimeout(game.timer);
+                }
+                game.timeLeft = game.timeLimit;
+                game.timer = setTimeout(() => {
+                    changeTurn(game);
+                }, game.timeLimit);
+                
+                // Notificar cambio de turno
+                game.players.forEach(playerId => {
+                    if (players[playerId]) {
+                        io.to(playerId).emit('turnChanged', {
+                            currentTurn: game.currentTurn,
+                            timeLeft: game.timeLimit
+                        });
+                    }
+                });
+            }
+        }, game.timeLimit);
+        
+        // Notificar cambio de turno inicial
+        game.players.forEach(playerId => {
+            if (players[playerId]) {
+                io.to(playerId).emit('turnChanged', {
+                    currentTurn: game.currentTurn,
+                    timeLeft: game.timeLeft
+                });
+            }
+        });
+    }
+}
+
 // Conexiones Socket.io
 io.on('connection', (socket) => {
     console.log(`Nuevo usuario conectado: ${socket.id}`);
-    console.log('Jugadores registrados:', Object.keys(players)); // Debug
     
-    // Registro de jugador
-    socket.on('registerPlayer', (playerName) => {
-        const normalizedName = normalizeText(playerName.toLowerCase());
-        
-        // Verificar si el nombre ya existe
-        const nameExists = Object.values(players).some(player => 
-            normalizeText(player.name.toLowerCase()) === normalizedName
-        );
-        
-        if (nameExists) {
-            socket.emit('nameAlreadyExists', {
-                message: 'Este nombre de usuario ya esta en uso'
+    // Registro de nuevo jugador
+    socket.on('registerPlayer', ({ username, password }) => {
+        // Validaciones básicas
+        if (!username || !password) {
+            socket.emit('registrationError', {
+                message: 'Usuario y contraseña son requeridos'
             });
             return;
         }
-        
-        players[socket.id] = {
-            name: playerName,
+
+        if (username.length < 3 || username.length > 20) {
+            socket.emit('registrationError', {
+                message: 'El usuario debe tener entre 3 y 20 caracteres'
+            });
+            return;
+        }
+
+        if (password.length < 6) {
+            socket.emit('registrationError', {
+                message: 'La contraseña debe tener al menos 6 caracteres'
+            });
+            return;
+        }
+
+        // Verificar si el usuario ya existe
+        if (users[username]) {
+            socket.emit('registrationError', {
+                message: 'Este nombre de usuario ya está en uso'
+            });
+            return;
+        }
+
+        // Crear nuevo usuario (en un caso real, deberías hashear la contraseña)
+        users[username] = {
+            password: password, // En producción, usa bcrypt para hashear
             socketId: socket.id,
             status: 'online',
             currentGame: null
         };
-        
+
+        saveUsers();
+
+        // Actualizar lista de jugadores
+        players[socket.id] = {
+            name: username,
+            socketId: socket.id,
+            status: 'online',
+            currentGame: null
+        };
+
         socket.broadcast.emit('playerUpdate', players);
         socket.emit('playerUpdate', players);
-        socket.emit('registrationSuccess', { playerName });
-        
-        console.log(`Jugador registrado: ${playerName} (${socket.id})`); // Debug
+        socket.emit('registrationSuccess', { username });
     });
-    
-    // Invitación a jugar
-    socket.on('invitePlayer', ({ inviterId, inviteeId }) => {
-        const inviter = players[inviterId];
-        const invitee = players[inviteeId];
-        
-        if (inviter && invitee && !invitee.currentGame) {
-            // Pedir al invitador que seleccione el modo de juego
-            io.to(inviterId).emit('selectGameMode', {
-                inviteeId: inviteeId,
-                inviteeName: invitee.name
+
+    // Inicio de sesión de jugador
+    socket.on('loginPlayer', ({ username, password }) => {
+        // Verificar credenciales
+        if (!users[username] || users[username].password !== password) {
+            socket.emit('loginError', {
+                message: 'Usuario o contraseña incorrectos'
             });
+            return;
         }
+
+        // Actualizar conexión
+        users[username].socketId = socket.id;
+        users[username].status = 'online';
+        saveUsers();
+
+        // Actualizar lista de jugadores
+        players[socket.id] = {
+            name: username,
+            socketId: socket.id,
+            status: 'online',
+            currentGame: null
+        };
+
+        socket.broadcast.emit('playerUpdate', players);
+        socket.emit('playerUpdate', players);
+        socket.emit('loginSuccess', { username });
     });
     
-    // Enviar invitación con modo de juego seleccionado
+	socket.on('sendGlobalChatMessage', ({ message, mentionedUsers }) => {
+    const player = players[socket.id];
+    if (!player) return;
+    
+    const processedMessage = message.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, 
+        match => `&#x${match.codePointAt(0).toString(16)};`);
+    
+    const chatMessage = {
+        sender: player.name,
+        message: processedMessage,
+        timestamp: new Date().toLocaleTimeString(),
+        mentionedUsers: mentionedUsers || []
+    };
+    
+    // Enviar a todos los jugadores
+    io.emit('receiveGlobalChatMessage', chatMessage);
+});
+	
+    // Invitación a jugar
     socket.on('sendInvitationWithMode', ({ inviterId, inviteeId, gameMode }) => {
         const inviter = players[inviterId];
         const invitee = players[inviteeId];
         
         if (inviter && invitee && !invitee.currentGame) {
-            io.to(inviteeId).emit('receiveInvitation', {
-                inviterName: inviter.name,
-                inviterId: inviterId,
-                gameMode: gameMode
+            // Solo notificar al invitado que están seleccionando modo para él
+            io.to(inviteeId).emit('beingInvited', {
+                inviterName: inviter.name
+            });
+            
+            // Guardar temporalmente la invitación pendiente
+            pendingInvitations[inviteeId] = {
+                inviterId,
+                gameMode
+            };
+            
+            // Enviar la invitación formal después de un breve retraso
+            setTimeout(() => {
+                if (pendingInvitations[inviteeId]) {
+                    io.to(inviteeId).emit('receiveInvitation', {
+                        inviterName: inviter.name,
+                        inviterId: inviterId,
+                        gameMode: gameMode
+                    });
+                }
+            }, 500);
+        }
+    });
+    
+    socket.on('selectingGameMode', ({ inviteeId }) => {
+        const invitee = players[inviteeId];
+        if (invitee) {
+            io.to(inviteeId).emit('beingInvited', {
+                inviterName: players[socket.id].name
             });
         }
+    });
+    
+    socket.on('rejectInvitation', ({ inviterId, inviteeId }) => {
+        // Limpiar la invitación pendiente
+        delete pendingInvitations[inviteeId || socket.id];
+        
+        if (players[inviterId]) {
+            // Notificar al invitador que fue rechazado
+            io.to(inviterId).emit('invitationDeclined', {
+                inviteeName: players[inviteeId || socket.id]?.name || 'El jugador'
+            });
+            
+            // Notificar al invitador que cancele la selección de modo
+            io.to(inviterId).emit('invitationCancelled');
+        }
+        
+        // Notificar al invitado que se canceló
+        if (inviteeId && players[inviteeId]) {
+            io.to(inviteeId).emit('invitationCancelled');
+        }
+    });
+    
+    // Cancelar invitación pendiente
+    socket.on('cancelPendingInvitation', ({ inviteeId }) => {
+        if (players[inviteeId]) {
+            io.to(inviteeId).emit('invitationCancelled');
+        }
+        delete pendingInvitations[inviteeId];
     });
     
     // Respuesta a invitación
     socket.on('respondInvitation', ({ inviterId, accepted, gameMode }) => {
         if (accepted) {
-            // Verificar que ambos jugadores existan
             if (!players[inviterId] || !players[socket.id]) {
                 socket.emit('gameError', { message: 'Uno de los jugadores no está disponible.' });
                 return;
@@ -142,7 +352,6 @@ io.on('connection', (socket) => {
             const gameId = `${inviterId}-${socket.id}`;
             let secretLength;
             
-            // Determinar longitud según modo de juego
             switch(gameMode) {
                 case '5digits':
                     secretLength = 5;
@@ -170,14 +379,15 @@ io.on('connection', (socket) => {
                 readyPlayers: 0,
                 gameMode: gameMode,
                 secretLength: secretLength,
-                raceNumber: gameMode === 'race' ? generateRandomNumber(secretLength) : null
+                raceNumber: gameMode === 'race' ? generateRandomNumber(secretLength) : null,
+                timer: null,
+                timeLimit: gameTimeLimits[gameMode] || 45000,
+                timeLeft: 0
             };
             
-            // Actualizar estado de los jugadores (solo si existen)
             if (players[inviterId]) players[inviterId].currentGame = gameId;
             if (players[socket.id]) players[socket.id].currentGame = gameId;
             
-            // Notificar a ambos jugadores para que ingresen su número secreto (excepto en modo carrera)
             if (gameMode !== 'race') {
                 io.to(inviterId).emit('enterSecretNumber', { 
                     gameId, 
@@ -193,13 +403,12 @@ io.on('connection', (socket) => {
                     secretLength: secretLength
                 });
             } else {
-                // Modo carrera: comenzar directamente
-                games[gameId].currentTurn = games[gameId].players[0];
+                games[gameId].currentTurn = games[gameId].players[Math.floor(Math.random() * 2)];
                 
                 io.to(inviterId).emit('gameStarted', { 
                     gameId, 
                     opponent: players[socket.id].name,
-                    yourTurn: true,
+                    yourTurn: games[gameId].currentTurn === inviterId,
                     chatMessages: games[gameId].chatMessages,
                     gameMode: gameMode
                 });
@@ -207,21 +416,28 @@ io.on('connection', (socket) => {
                 io.to(socket.id).emit('gameStarted', { 
                     gameId, 
                     opponent: players[inviterId].name,
-                    yourTurn: false,
+                    yourTurn: games[gameId].currentTurn === socket.id,
                     chatMessages: games[gameId].chatMessages,
                     gameMode: gameMode
                 });
+                
+                // Iniciar temporizador para el primer turno
+                changeTurn(games[gameId]);
             }
             
-            // Actualizar lista de jugadores
             io.emit('playerUpdate', players);
-            console.log(`Nueva partida creada: ${gameId}`); // Debug
+            
+            // Limpiar invitación pendiente
+            delete pendingInvitations[socket.id];
         } else {
             if (players[inviterId]) {
                 io.to(inviterId).emit('invitationDeclined', {
                     inviteeName: players[socket.id].name
                 });
             }
+            
+            // Limpiar invitación pendiente
+            delete pendingInvitations[socket.id];
         }
     });
     
@@ -230,7 +446,6 @@ io.on('connection', (socket) => {
         const game = games[gameId];
         if (!game || game.winner) return;
         
-        // Validar número secreto según modo de juego
         if (!isValidNumber(secretNumber, game.secretLength)) {
             socket.emit('invalidSecretNumber', { 
                 message: `El numero debe tener ${game.secretLength} digitos unicos` 
@@ -238,23 +453,19 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Guardar número secreto
         game.secrets[socket.id] = secretNumber;
         game.readyPlayers++;
         
-        // Notificar al jugador que su número fue aceptado
         socket.emit('secretNumberAccepted');
         
-        // Si ambos jugadores están listos, comenzar el juego
         if (game.readyPlayers === 2) {
-            // El jugador que envió la invitación comienza primero
-            game.currentTurn = game.players[0];
+            // Elegir jugador inicial aleatorio
+            game.currentTurn = game.players[Math.floor(Math.random() * 2)];
             
-            // Notificar a ambos jugadores
             io.to(game.players[0]).emit('gameStarted', { 
                 gameId, 
                 opponent: players[game.players[1]].name,
-                yourTurn: true,
+                yourTurn: game.currentTurn === game.players[0],
                 chatMessages: game.chatMessages,
                 gameMode: game.gameMode
             });
@@ -262,10 +473,13 @@ io.on('connection', (socket) => {
             io.to(game.players[1]).emit('gameStarted', { 
                 gameId, 
                 opponent: players[game.players[0]].name,
-                yourTurn: false,
+                yourTurn: game.currentTurn === game.players[1],
                 chatMessages: game.chatMessages,
                 gameMode: game.gameMode
             });
+            
+            // Iniciar temporizador para el primer turno
+            changeTurn(game);
         }
     });
     
@@ -277,11 +491,9 @@ io.on('connection', (socket) => {
         const player = players[socket.id];
         if (!player) return;
         
-        // Convertir emojis a su código
         const processedMessage = message.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, 
             match => `&#x${match.codePointAt(0).toString(16)};`);
         
-        // Agregar mensaje al historial del juego
         const chatMessage = {
             sender: player.name,
             message: processedMessage,
@@ -290,72 +502,75 @@ io.on('connection', (socket) => {
         
         game.chatMessages.push(chatMessage);
         
-        // Enviar mensaje a ambos jugadores
         game.players.forEach(playerId => {
             io.to(playerId).emit('receiveChatMessage', chatMessage);
         });
     });
     
-	
-	
     // Enviar guess
     socket.on('submitGuess', ({ gameId, guess }) => {
-    const game = games[gameId];
-    if (!game || game.winner) return;
-    
-    // Validar que sea el turno del jugador
-    if (game.currentTurn !== socket.id) {
-        socket.emit('notYourTurn', { message: 'No es tu turno' });
-        return;
-    }
+        const game = games[gameId];
+        if (!game || game.winner) return;
         
+        if (game.currentTurn !== socket.id) {
+            socket.emit('notYourTurn', { message: 'No es tu turno' });
+            return;
+        }
+            
+        // Limpiar temporizador actual
+        if (game.timer) {
+            clearTimeout(game.timer);
+            game.timer = null;
+        }
+
         const playerId = socket.id;
         const opponentId = game.players.find(id => id !== playerId);
         
-        // En modo carrera, usar el número generado por el sistema
         const secret = game.gameMode === 'race' ? game.raceNumber : game.secrets[opponentId];
         
-        // Calcular vacas y toros
         const { bulls, cows } = calculateBullsAndCows(secret, guess);
         
-        // Actualizar estado del juego
         game.guesses[playerId].push({ guess, bulls, cows });
-        game.currentTurn = opponentId;
         
-        // Verificar si hay ganador
         if (bulls === game.secretLength) {
-    game.winner = playerId;
-    
-    if (game.gameMode === 'race') {
-        io.to(playerId).emit('gameWon', { 
-            secretNumber: game.raceNumber,
-            opponentSecret: null,
-            gameMode: game.gameMode
-        });
-        io.to(opponentId).emit('gameLost', { 
-            secretNumber: game.raceNumber,
-            opponentSecret: null,
-            gameMode: game.gameMode
-        });
-    } else {
-        io.to(playerId).emit('gameWon', { 
-            secretNumber: game.secrets[playerId],
-            opponentSecret: game.secrets[opponentId],
-            gameMode: game.gameMode
-        });
-        io.to(opponentId).emit('gameLost', { 
-            secretNumber: game.secrets[opponentId],
-            opponentSecret: game.secrets[playerId],
-            gameMode: game.gameMode
-        });
-    }
+            game.winner = playerId;
             
-            // Actualizar estado de los jugadores
+            // Limpiar temporizador al terminar el juego
+            if (game.timer) {
+                clearTimeout(game.timer);
+            }
+            
+            if (game.gameMode === 'race') {
+                io.to(playerId).emit('gameWon', { 
+                    secretNumber: game.raceNumber,
+                    opponentSecret: null,
+                    gameMode: game.gameMode
+                });
+                io.to(opponentId).emit('gameLost', { 
+                    secretNumber: game.raceNumber,
+                    opponentSecret: null,
+                    gameMode: game.gameMode
+                });
+            } else {
+                io.to(playerId).emit('gameWon', { 
+                    secretNumber: game.secrets[playerId],
+                    opponentSecret: game.secrets[opponentId],
+                    gameMode: game.gameMode
+                });
+                io.to(opponentId).emit('gameLost', { 
+                    secretNumber: game.secrets[opponentId],
+                    opponentSecret: game.secrets[playerId],
+                    gameMode: game.gameMode
+                });
+            }
+            
             if (players[playerId]) players[playerId].currentGame = null;
             if (players[opponentId]) players[opponentId].currentGame = null;
             io.emit('playerUpdate', players);
         } else {
-            // Notificar a los jugadores
+            // Cambiar turno y reiniciar temporizador
+            changeTurn(game);
+            
             io.to(playerId).emit('guessResult', { 
                 guess, bulls, cows, 
                 yourTurn: false,
@@ -379,21 +594,22 @@ io.on('connection', (socket) => {
         const opponentId = game.players.find(id => id !== socket.id);
         if (opponentId) {
             if (game.readyPlayers < 2) {
-                // Si la partida no ha comenzado completamente
                 io.to(opponentId).emit('gameCancelled');
             } else {
-                // Si la partida ya estaba en curso
                 io.to(opponentId).emit('opponentQuit', {
                     opponentName: players[socket.id]?.name || 'El oponente'
                 });
             }
             
-            // Liberar al oponente
             if (players[opponentId]) players[opponentId].currentGame = null;
             io.emit('playerUpdate', players);
         }
 
-        // Eliminar juego
+        // Limpiar temporizador
+        if (game.timer) {
+            clearTimeout(game.timer);
+        }
+        
         delete games[gameId];
         if (players[socket.id]) players[socket.id].currentGame = null;
         io.emit('playerUpdate', players);
@@ -410,6 +626,11 @@ io.on('connection', (socket) => {
             if (players[opponentId]) players[opponentId].currentGame = null;
         }
 
+        // Limpiar temporizador si existe
+        if (game.timer) {
+            clearTimeout(game.timer);
+        }
+        
         delete games[gameId];
         if (players[socket.id]) players[socket.id].currentGame = null;
         io.emit('playerUpdate', players);
@@ -417,9 +638,37 @@ io.on('connection', (socket) => {
     
     // Desconexión
     socket.on('disconnect', () => {
-        console.log(`Usuario desconectado: ${socket.id}`); // Debug
+        console.log(`Usuario desconectado: ${socket.id}`);
+        
+        // Actualizar estado en users.json
+        for (const [username, user] of Object.entries(users)) {
+            if (user.socketId === socket.id) {
+                user.status = 'offline';
+                user.socketId = null;
+            }
+        }
+        saveUsers();
+        
+        // Cancelar cualquier invitación pendiente
+        if (pendingInvitations[socket.id]) {
+            const { inviterId } = pendingInvitations[socket.id];
+            if (players[inviterId]) {
+                io.to(inviterId).emit('invitationCancelled');
+            }
+            delete pendingInvitations[socket.id];
+        }
+        
+        // Buscar invitaciones donde este jugador era el invitador
+        for (const [inviteeId, invitation] of Object.entries(pendingInvitations)) {
+            if (invitation.inviterId === socket.id) {
+                if (players[inviteeId]) {
+                    io.to(inviteeId).emit('invitationCancelled');
+                }
+                delete pendingInvitations[inviteeId];
+            }
+        }
+        
         if (players[socket.id]) {
-            // Si estaba en un juego, notificar al oponente
             if (players[socket.id].currentGame) {
                 const game = games[players[socket.id].currentGame];
                 if (game) {
@@ -433,16 +682,20 @@ io.on('connection', (socket) => {
                             });
                         }
                         
-                        // Liberar al oponente
                         if (players[opponentId]) players[opponentId].currentGame = null;
                     }
+                    
+                    // Limpiar temporizador
+                    if (game.timer) {
+                        clearTimeout(game.timer);
+                    }
+                    
                     delete games[players[socket.id].currentGame];
                 }
             }
             
             delete players[socket.id];
             io.emit('playerUpdate', players);
-            console.log('Jugadores restantes:', Object.keys(players)); // Debug
         }
     });
 });
