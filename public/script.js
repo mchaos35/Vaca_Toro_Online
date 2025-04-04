@@ -508,6 +508,10 @@ function resetGame() {
     
     currentGameId = null;
     mySecretNumber = '';
+    myTurn = false;
+    opponentPlayerName = '';
+    
+    // Limpiar elementos de la UI
     if (gameBoard) gameBoard.style.display = 'none';
     if (gameChat) gameChat.style.display = 'none';
     if (secretNumberScreen) secretNumberScreen.style.display = 'none';
@@ -518,6 +522,18 @@ function resetGame() {
     if (secretNumberContainer) secretNumberContainer.style.display = 'none';
     if (quitGameBtn) quitGameBtn.style.display = 'none';
     if (sidebar) sidebar.style.display = 'block';
+    
+    // Limpiar el estado del resultado
+    if (resultModal) resultModal.style.display = 'none';
+    if (gameStatus) gameStatus.innerHTML = '';
+    if (turnIndicator) {
+        turnIndicator.innerHTML = '';
+        turnIndicator.className = '';
+    }
+    if (guessInput) {
+        guessInput.value = '';
+        guessInput.disabled = false;
+    }
 }
 
 function addRankingButtons() {
