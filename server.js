@@ -493,43 +493,63 @@ io.on('connection', (socket) => {
     
     // Número secreto
     socket.on('submitSecretNumber', ({ gameId, secretNumber }) => {
-        const game = games[gameId];
-        if (!game || game.winner) return;
+    const game = games[gameId];
+    if (!game || game.winner) return;
+    
+    const secretLength = game.secretLength;
+    const errorMessages = [];
+    
+    if (secretNumber.length !== secretLength) {
+        errorMessages.push(`El número debe tener ${secretLength} dígitos`);
+    }
+    
+    if (!/^\d+$/.test(secretNumber)) {
+        errorMessages.push("Solo se permiten dígitos numéricos");
+    }
+    
+    if (new Set(secretNumber.split('')).size !== secretLength) {
+        errorMessages.push("Todos los dígitos deben ser diferentes");
+    }
+    
+    if (secretNumber[0] === '0') {
+        errorMessages.push("El primer dígito no puede ser 0");
+    }
+    
+    if (errorMessages.length > 0) {
+        socket.emit('invalidSecretNumber', { 
+            message: errorMessages.join(', ') 
+        });
+        return;
+    }
+    
+    // Si pasa todas las validaciones
+    game.secrets[socket.id] = secretNumber;
+    game.readyPlayers++;
+    
+    socket.emit('secretNumberAccepted');
+    
+    if (game.readyPlayers === 2) {
+        game.currentTurn = game.players[Math.floor(Math.random() * 2)];
         
-        if (!isValidNumber(secretNumber, game.secretLength)) {
-            socket.emit('invalidSecretNumber', { 
-                message: `El numero debe tener ${game.secretLength} digitos unicos` 
-            });
-            return;
-        }
+        io.to(game.players[0]).emit('gameStarted', { 
+            gameId, 
+            opponent: players[game.players[1]].name,
+            yourTurn: game.currentTurn === game.players[0],
+            chatMessages: games[gameId].chatMessages,
+            gameMode: game.gameMode
+        });
         
-        game.secrets[socket.id] = secretNumber;
-        game.readyPlayers++;
+        io.to(game.players[1]).emit('gameStarted', { 
+            gameId, 
+            opponent: players[game.players[0]].name,
+            yourTurn: game.currentTurn === game.players[1],
+            chatMessages: games[gameId].chatMessages,
+            gameMode: game.gameMode
+        });
         
-        socket.emit('secretNumberAccepted');
-        
-        if (game.readyPlayers === 2) {
-            game.currentTurn = game.players[Math.floor(Math.random() * 2)];
-            
-            io.to(game.players[0]).emit('gameStarted', { 
-                gameId, 
-                opponent: players[game.players[1]].name,
-                yourTurn: game.currentTurn === game.players[0],
-                chatMessages: games[gameId].chatMessages,
-                gameMode: game.gameMode
-            });
-            
-            io.to(game.players[1]).emit('gameStarted', { 
-                gameId, 
-                opponent: players[game.players[0]].name,
-                yourTurn: game.currentTurn === game.players[1],
-                chatMessages: games[gameId].chatMessages,
-                gameMode: game.gameMode
-            });
-            
-            changeTurn(game);
-        }
-    });
+        changeTurn(game);
+    }
+});
     
     // Chat de juego
     socket.on('sendChatMessage', ({ gameId, message }) => {

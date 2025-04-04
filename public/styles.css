@@ -89,6 +89,23 @@
             max-width: 800px;
         }
         
+		/* Estilos para el input de número secreto */
+#secretNumberInput.invalid {
+    border-color: var(--danger-color);
+    animation: shake 0.5s;
+}
+
+#secretNumberInput.valid {
+    border-color: var(--success-color);
+}
+
+#secretNumberError {
+    color: var(--danger-color);
+    font-size: 0.9rem;
+    margin-top: 5px;
+    display: none;
+}
+		
         .card:hover {
             transform: translateY(-5px);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);

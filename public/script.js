@@ -1171,7 +1171,7 @@ socket.on('gameWon', ({ secretNumber, opponentSecret, gameMode }) => {
         title = '&#x1f3c6; ¡GANASTE LA CARRERA!';
         message = 'Adivinaste el número antes que tu oponente';
     } else {
-        title = '&#x1  f389; ¡GANASTE!';
+        title = '&#x1f389; ¡GANASTE!';
         message = 'Adivinaste el número secreto de tu oponente';
     }
     
@@ -1199,7 +1199,7 @@ socket.on('gameLost', ({ secretNumber, opponentSecret, gameMode }) => {
         title = '&#x1f62d; ¡PERDISTE LA CARRERA!';
         message = 'Tu oponente adivinó el número primero';
     } else {
-        title = '&#x1  f622; ¡PERDISTE!';
+        title = '&#x1f622; ¡PERDISTE!';
         message = 'Tu oponente adivinó tu número secreto';
     }
     
@@ -1370,13 +1370,28 @@ if (secretNumberInput) {
         const value = e.target.value;
         const secretLength = parseInt(secretNumberLength.textContent);
         
-        if (new Set(value.split('')).size !== value.length && value.length > 0) {
-            if (secretNumberError) {
-                secretNumberError.textContent = 'Los digitos deben ser unicos';
-                secretNumberError.style.display = 'block';
+        // Limitar la longitud máxima
+        if (value.length > secretLength) {
+            e.target.value = value.slice(0, secretLength);
+            return;
+        }
+        
+        // Validar dígitos únicos
+        const hasDuplicates = new Set(value.split('')).size !== value.length;
+        
+        if (value.length > 0) {
+            if (!/^\d+$/.test(value)) {
+                e.target.value = value.replace(/[^\d]/g, '');
+                showSecretNumberError("Solo se permiten dígitos numéricos");
+            } else if (hasDuplicates) {
+                showSecretNumberError("Los dígitos deben ser únicos");
+            } else if (value[0] === '0') {
+                showSecretNumberError("El primer dígito no puede ser 0");
+            } else {
+                secretNumberError.style.display = 'none';
             }
         } else {
-            if (secretNumberError) secretNumberError.style.display = 'none';
+            secretNumberError.style.display = 'none';
         }
     });
 }
@@ -1386,26 +1401,43 @@ if (submitSecretNumberBtn) {
         const secret = secretNumberInput.value.trim();
         const secretLength = parseInt(secretNumberLength.textContent);
         
-        if (secret.length !== secretLength || !/  ^\d+$/.test(secret) || new Set(secret.split('')).size !== secretLength) {
-            if (secretNumberError) {
-                secretNumberError.textContent = `El numero debe tener ${secretLength} digitos unicos`;
-                secretNumberError.style.display = 'block';
-            }
-            if (secretNumberInput) {
-                secretNumberInput.classList.add('shake');
-                setTimeout(() => {
-                    secretNumberInput.classList.remove('shake');
-                }, 500);
-            }
+        // Validación mejorada
+        if (secret.length !== secretLength) {
+            showSecretNumberError(`El número debe tener exactamente ${secretLength} dígitos`);
             return;
         }
         
+        if (!/^\d+$/.test(secret)) {
+            showSecretNumberError("Solo se permiten dígitos numéricos (0-9)");
+            return;
+        }
+        
+        if (new Set(secret.split('')).size !== secretLength) {
+            showSecretNumberError("Todos los dígitos deben ser diferentes");
+            return;
+        }
+        
+        // Si pasa todas las validaciones
         mySecretNumber = secret;
         socket.emit('submitSecretNumber', {
             gameId: currentGameId,
             secretNumber: secret
         });
     });
+}
+
+// Función auxiliar para mostrar errores
+function showSecretNumberError(message) {
+    if (secretNumberError) {
+        secretNumberError.textContent = message;
+        secretNumberError.style.display = 'block';
+    }
+    if (secretNumberInput) {
+        secretNumberInput.classList.add('shake');
+        setTimeout(() => {
+            secretNumberInput.classList.remove('shake');
+        }, 500);
+    }
 }
 
 if (cancelSecretNumberBtn) {
@@ -1471,12 +1503,30 @@ if (submitGuessBtn) {
         const guess = guessInput.value.trim();
         const requiredLength = parseInt(guessInput.maxLength);
         
-        if (guess.length !== requiredLength || !/  ^\d+$/.test(guess) || new Set(guess.split('')).size !== requiredLength) {
+        // Validación mejorada con mensajes específicos
+        if (guess.length !== requiredLength) {
+            alert(`El número debe tener exactamente ${requiredLength} dígitos`);
             if (guessInput) {
                 guessInput.classList.add('shake');
-                setTimeout(() => {
-                    guessInput.classList.remove('shake');
-                }, 500);
+                setTimeout(() => guessInput.classList.remove('shake'), 500);
+            }
+            return;
+        }
+        
+        if (!/^\d+$/.test(guess)) {
+            alert('Solo se permiten dígitos numéricos (0-9)');
+            if (guessInput) {
+                guessInput.classList.add('shake');
+                setTimeout(() => guessInput.classList.remove('shake'), 500);
+            }
+            return;
+        }
+        
+        if (new Set(guess.split('')).size !== requiredLength) {
+            alert('Todos los dígitos deben ser diferentes');
+            if (guessInput) {
+                guessInput.classList.add('shake');
+                setTimeout(() => guessInput.classList.remove('shake'), 500);
             }
             return;
         }
@@ -1491,28 +1541,14 @@ if (submitGuessBtn) {
 }
 
 if (guessInput) {
-    guessInput.addEventListener('input', (e) => {
-        const value = e.target.value;
-        const requiredLength = parseInt(guessInput.maxLength);
-        
-        if (value.length > requiredLength) {
-            e.target.value = value.slice(0, requiredLength);
-        }
-        
-        if (new Set(value.split('')).size !== value.length && value.length > 0) {
-            guessInput.style.borderColor = 'var(--danger-color)';
-        } else {
-            guessInput.style.borderColor = '#ddd';
-        }
-    });
-
     guessInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             if (!myTurn) {
                 alert('¡No es tu turno! Espera a que el oponente juegue.');
                 return;
             }
-            if (submitGuessBtn) submitGuessBtn.click();
+            // Disparar el mismo código que el botón
+            submitGuessBtn.click();
         }
     });
 }

@@ -1,0 +1,52 @@
+{
+  "Test": {
+    "totalScore": 2280,
+    "gamesPlayed": 4,
+    "gamesWon": 4,
+    "classic": {
+      "score": 2280,
+      "games": 4,
+      "wins": 4
+    },
+    "5digits": {
+      "score": 0,
+      "games": 0,
+      "wins": 0
+    },
+    "6digits": {
+      "score": 0,
+      "games": 0,
+      "wins": 0
+    },
+    "race": {
+      "score": 0,
+      "games": 0,
+      "wins": 0
+    }
+  },
+  "LEOD": {
+    "totalScore": 456,
+    "gamesPlayed": 4,
+    "gamesWon": 4,
+    "classic": {
+      "score": 456,
+      "games": 4,
+      "wins": 4
+    },
+    "5digits": {
+      "score": 0,
+      "games": 0,
+      "wins": 0
+    },
+    "6digits": {
+      "score": 0,
+      "games": 0,
+      "wins": 0
+    },
+    "race": {
+      "score": 0,
+      "games": 0,
+      "wins": 0
+    }
+  }
+}

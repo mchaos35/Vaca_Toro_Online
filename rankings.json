@@ -1,0 +1,25 @@
+{
+  "global": [
+    {
+      "username": "Test",
+      "score": 2280
+    },
+    {
+      "username": "LEOD",
+      "score": 456
+    }
+  ],
+  "classic": [
+    {
+      "username": "Test",
+      "score": 2280
+    },
+    {
+      "username": "LEOD",
+      "score": 456
+    }
+  ],
+  "5digits": [],
+  "6digits": [],
+  "race": []
+}
