@@ -1,6 +1,6 @@
 Juego de Vacas y Toros Online en Node.js
 
-Esta version esta todavia en fase de desarrollo, se implementaran mas opciones y caracteristicas poco a poco la version actual incluye PVP 1vs1 contra los jugadores que se conecten, con estadisticas locales y globales se ajustaran los bugs visuales y otros en el proceso de mejora y actualizacion, el multijugadore se esta implementando, actualmente no funciona.
+Esta version esta todavia en fase de desarrollo, se implementaran mas opciones y caracteristicas poco a poco la version actual incluye PVP 1vs1 contra los jugadores que se conecten, con estadisticas locales y globales, se ajustaran los bugs visuales y otros en el proceso de mejora y actualizacion, el multijugador se esta implementando, actualmente no funciona.
 
 INSTRUCCIONES DE INSTALACION:
 - Instalar Node.js
