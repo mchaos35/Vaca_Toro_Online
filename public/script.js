@@ -866,6 +866,16 @@ function showMultiplayerMenu() {
     socket.emit('requestAvailableGames');
 }
 
+function showGameWaitingScreen(gameId, currentPlayers, maxPlayers) {
+    if (multiplayerMenu) multiplayerMenu.style.display = 'none';
+    if (gameWaitingScreen) {
+        gameWaitingScreen.style.display = 'block';
+        currentPlayersSpan.textContent = currentPlayers;
+        maxPlayersSpan.textContent = maxPlayers;
+    }
+    currentGameId = gameId;
+}
+
 function showMainMenu() {
     if (welcomeCard) welcomeCard.style.display = 'block';
     if (sidebar) sidebar.style.display = 'block';
@@ -1254,6 +1264,7 @@ socket.on('gameStarted', ({ gameId, opponent, yourTurn, chatMessages, gameMode }
 });
 
 socket.on('multiplayerGameCreated', ({ gameId }) => {
+	showGameWaitingScreen(gameId, currentPlayers, maxPlayers);
     currentGameId = gameId;
     welcomeCard.style.display = 'none';
     multiplayerMenu.style.display = 'none';
@@ -1296,6 +1307,10 @@ socket.on('playerJoinedGame', ({ gameId, playerName, currentPlayers, maxPlayers 
             startGameBtn.style.display = 'block';
         }
     }
+});
+
+socket.on('gameReadyToStart',  () => {
+    if (startGameBtn) startGameBtn.style.display = 'block';
 });
 
 socket.on('playerLeftGame', ({ playerName, currentPlayers }) => {

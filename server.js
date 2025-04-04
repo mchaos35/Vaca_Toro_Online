@@ -796,6 +796,101 @@ io.on('connection', (socket) => {
         });
     });
     
+	socket.on('createMultiplayerGame', (settings) => {
+    const player = players[socket.id];
+    if (!player || player.currentGame) return;
+
+    const gameId = `multi-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    
+    games[gameId] = {
+        id: gameId,
+        creator: player.name,
+        creatorId: socket.id,
+        players: [socket.id],
+        currentPlayers: 1,
+        maxPlayers: settings.playerCount,
+        gameMode: settings.gameMode,
+        timeLimit: settings.timeLimit,
+        status: 'waiting'
+    };
+
+    player.currentGame = gameId;
+    io.emit('playerUpdate', players);
+    io.emit('availableGamesUpdate', Object.values(games).filter(g => g.status === 'waiting'));
+    
+    // Enviar confirmación al creador
+    socket.emit('multiplayerGameCreated', { 
+        gameId,
+        currentPlayers: 1,
+        maxPlayers: settings.playerCount
+    });
+});
+	
+	// En server.js
+socket.on('joinMultiplayerGame', ({ gameId }) => {
+    const game = games[gameId];
+    const player = players[socket.id];
+    
+    if (!game || !player || player.currentGame || game.players.length >= game.maxPlayers) {
+        socket.emit('gameError', { message: 'No se pudo unir a la partida' });
+        return;
+    }
+    
+    game.players.push(socket.id);
+    game.currentPlayers = game.players.length;
+    player.currentGame = gameId;
+    
+    // Notificar a todos los jugadores en la partida
+    game.players.forEach(playerId => {
+        io.to(playerId).emit('playerJoinedGame', {
+            gameId,
+            playerName: player.name,
+            currentPlayers: game.currentPlayers,
+            maxPlayers: game.maxPlayers
+        });
+    });
+    
+    // Actualizar lista de partidas para todos
+    io.emit('availableGamesUpdate', Object.values(games).filter(g => g.status === 'waiting'));
+    
+    // Si la partida está llena, notificar al creador para que pueda iniciar
+    if (game.currentPlayers === game.maxPlayers) {
+        io.to(game.creatorId).emit('gameReadyToStart', { gameId });
+    }
+});
+	
+	socket.on('startMultiplayerGame',  ({ gameId }) => {
+    const game = games[gameId];
+    if (!game || game.status !== 'waiting' || game.players.length < 2) return;
+
+    game.status = 'playing';
+    game.raceNumber = generateRandomNumber(
+        game.gameMode === '5digits' ? 5 : 
+        game.gameMode === '6digits' ? 6 : 4
+    );
+    
+    // Seleccionar jugador inicial aleatorio
+    game.currentTurn = game.players[Math.floor(Math.random() * game.players.length)];
+    game.timeLeft = game.timeLimit;
+    
+    // Notificar a todos los jugadores
+    game.players.forEach((playerId, index) => {
+        io.to(playerId).emit('multiplayerGameStarted', {
+            gameId,
+            players: game.players.map(id => players[id].name),
+            yourTurn: playerId === game.currentTurn,
+            gameMode: game.gameMode,
+            playerIndex: index
+        });
+    });
+    
+    // Iniciar temporizador
+    changeTurn(game);
+    
+    // Actualizar lista de partidas
+    io.emit('availableGamesUpdate', Object.values(games).filter(g => g.status === 'waiting'));
+});
+	
     // Desconexión
     socket.on('disconnect',  () => {
         console.log(`Usuario desconectado: ${socket.id}`);
