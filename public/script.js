@@ -595,17 +595,38 @@ function showRankingsModal(rankingType, rankings) {
         default: title = 'Ranking Global';
     }
     
-    let content = `<h2>${title}</h2><ol class="ranking-list">`;
+    let content = `
+        <h2>${title}</h2>
+        <div class="ranking-table-container">
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th>Posición</th>
+                        <th>Jugador</th>
+                        <th>Puntos</th>
+                        <th>Partidas</th>
+                        <th>Victorias</th>
+                        <th>Win Rate</th>
+                    </tr>
+                </thead>
+                <tbody>`;
     
     rankings.forEach((player, index) => {
-        content += `<li>
-            <span class="rank-position">${index + 1}</span>
-            <span class="rank-username">${player.username}</span>
-            <span class="rank-score">${player.score} pts</span>
-        </li>`;
+        content += `
+            <tr>
+                <td class="rank-position">${index + 1}</td>
+                <td class="rank-username">${player.username}</td>
+                <td class="rank-score">${player.score}</td>
+                <td class="rank-games">${player.gamesPlayed}</td>
+                <td class="rank-wins">${player.gamesWon}</td>
+                <td class="rank-winrate">${player.winRate}%</td>
+            </tr>`;
     });
     
-    content += `</ol>
+    content += `
+                </tbody>
+            </table>
+        </div>
         <div class="modal-actions">
             <button class="btn btn-primary" id="closeRankingsBtn">Cerrar</button>
         </div>`;

@@ -33,7 +33,7 @@ if (fs.existsSync(SCORES_FILE)) {
 }
 
 let rankings = {
-    global: [],
+    global: [],  // Ahora contendrá objetos con más propiedades
     classic: [],
     '5digits': [],
     '6digits': [],
@@ -166,19 +166,36 @@ function updateRankings(username, gameMode, score, isWinner) {
     saveRankings();
 }
 
-function updateSingleRanking(rankingType, username, score) {
+function updateSingleRanking(rankingType, username, score, stats = null) {
+    const playerStats = stats || scores[username];
+    
     const index = rankings[rankingType].findIndex(item => item.username === username);
     
     if (index !== -1) {
         rankings[rankingType][index].score = score;
+        rankings[rankingType][index].gamesPlayed = playerStats.gamesPlayed;
+        rankings[rankingType][index].gamesWon = playerStats.gamesWon;
+        rankings[rankingType][index].winRate = playerStats.gamesPlayed > 0 
+            ? Math.round((playerStats.gamesWon / playerStats.gamesPlayed) * 100) 
+            : 0;
     } else {
-        rankings[rankingType].push({ username, score });
+        rankings[rankingType].push({ 
+            username,
+            score,
+            gamesPlayed: playerStats.gamesPlayed,
+            gamesWon: playerStats.gamesWon,
+            winRate: playerStats.gamesPlayed > 0 
+                ? Math.round((playerStats.gamesWon / playerStats.gamesPlayed) * 100) 
+                : 0
+        });
     }
     
-    // Ordenar y limitar a 100 entradas
+    // Ordenar por puntuación descendente
     rankings[rankingType].sort((a, b) => b.score - a.score);
+    
+    // Limitar a 100 entradas
     if (rankings[rankingType].length > 100) {
-        rankings[ranking0Type] = rankings[rankingType].slice(0, 100);
+        rankings[rankingType] = rankings[rankingType].slice(0, 100);
     }
 }
 
@@ -757,15 +774,19 @@ io.on('connection', (socket) => {
     });
     
     // Solicitudes de ranking
-    socket.on('requestRankings',  ({ rankingType }) => {
-        const validTypes = ['global', 'classic', '5digits', '6digits', 'race'];
-        const type = validTypes.includes(rankingType) ? rankingType : 'global';
-        
-        socket.emit('receiveRankings', {
-            rankingType: type,
-            rankings: rankings[type].slice(0, 50)
-        });
+    socket.on('requestRankings', ({ rankingType }) => {
+    const validTypes = ['global', 'classic', '5digits', '6digits', 'race'];
+    const type = validTypes.includes(rankingType) ? rankingType : 'global';
+    
+    // Enviar datos completos del ranking
+    socket.emit('receiveRankings', {
+        rankingType: type,
+        rankings: rankings[type].slice(0, 50).map(player => ({
+            ...player,
+            winRate: player.winRate || 0
+        }))
     });
+});
     
     socket.on('requestPlayerStats',  ({ username }) => {
         const playerStats = scores[username] || null;

@@ -1219,3 +1219,65 @@
     margin: 5px 0;
     font-size: 0.9rem;
 }
+/* Estilos para la tabla de rankings */
+.ranking-table-container {
+    max-height: 60vh;
+    overflow-y: auto;
+    margin: 20px 0;
+}
+
+#rankingsModal .modal-content {
+    max-width: 800px; /* Aumentado de 500px */
+    width: 90%;
+    padding: 25px;
+}
+
+/* Ajustar la tabla para que ocupe todo el espacio */
+.ranking-table {
+    width: 100%;
+    min-width: 700px; /* Ancho mínimo para que quepan todas las columnas */
+    font-size: 0.95rem; /* Tamaño de fuente ligeramente mayor */
+}
+
+.ranking-table th, .ranking-table td {
+    padding: 10px 15px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.ranking-table th {
+    background-color: var(--primary-color);
+    color: white;
+    position: sticky;
+    top: 0;
+}
+
+.ranking-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.ranking-table tr:hover {
+    background-color: #f1f1f1;
+}
+
+.rank-position {
+    font-weight: bold;
+    color: var(--primary-color);
+    text-align: center;
+}
+
+.rank-score, .rank-games, .rank-wins, .rank-winrate {
+    text-align: center;
+}
+
+.rank-winrate {
+    font-weight: bold;
+}
+
+/* Colores para win rates */
+.rank-winrate[data-rate="100"] { color: #4CAF50; }
+.rank-winrate[data-rate^="8"] { color: #8BC34A; }
+.rank-winrate[data-rate^="6"] { color: #FFC107; }
+.rank-winrate[data-rate^="4"] { color: #FF9800; }
+.rank-winrate[data-rate^="0"] { color: #F44336; }
+
